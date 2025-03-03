@@ -6,6 +6,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from bs4 import BeautifulSoup
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
@@ -32,7 +33,7 @@ def get_emails_by_label(service, email_label: str, search_subject: str) -> list[
     label_id = next((label["id"] for label in labels if label["name"] == email_label), None)
     filtered_emails = []
     saved_verbs = set()
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop", "deutsch")
+    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop", "Deutsch_verbs")
     os.makedirs(desktop_path, exist_ok=True)
 
     for file in os.listdir(desktop_path):
@@ -59,6 +60,8 @@ def get_emails_by_label(service, email_label: str, search_subject: str) -> list[
                 body = extract_email_body(msg_data)
                 if body:
                     verb = extract_verb(body)
+                    if verb is None:
+                        verb = extract_verb_using_bs4(body)
                     if verb and verb.replace(" ", "-") not in saved_verbs:
                         print(f'Going ahead with verb "{verb}"')
                         filename = f"{verb.replace(' ', '-').strip()}.html"
@@ -70,6 +73,32 @@ def get_emails_by_label(service, email_label: str, search_subject: str) -> list[
 
     print(f'Found {len(filtered_emails)} new emails matching "{search_subject}".')
     return filtered_emails
+
+
+def extract_verb_using_bs4(body) -> str:
+    """Extracts the full verb phrase from the email body, handling HTML tags."""
+
+    # Parse HTML
+    soup = BeautifulSoup(body, "html.parser")
+
+    # Find the paragraph that contains the phrase
+    for p in soup.find_all("p"):
+        if "Today we'll go through the verb:" in p.get_text():
+
+            # Find all strong tags inside it
+            strong_tags = p.find_all("strong")
+
+            # Extract text from all strong tags and join them
+            verb_text = " ".join(tag.get_text(strip=True) for tag in strong_tags if tag.get_text(strip=True))
+
+            # Remove leading/trailing colons or extra spaces
+            verb_text = re.sub(r"^[\s:]+|[\s:]+$", "", verb_text)
+
+            print("Cleaned Extracted verb:", verb_text)  # Debugging step
+
+            return verb_text if verb_text else None
+
+    return None  # Return None if not found
 
 
 def extract_email_body(msg_data):
@@ -94,7 +123,7 @@ def extract_verb(body):
 
 def save_emails_to_html(emails):
     """Saves emails to separate HTML files in the Desktop 'deutsch' folder."""
-    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop", "deutsch")
+    desktop_path = os.path.join(os.path.expanduser("~"), "Desktop", "Deutsch_verbs")
     os.makedirs(desktop_path, exist_ok=True)
 
     for email in emails:
@@ -108,7 +137,7 @@ def main():
     """Fetch and save emails as HTML in Desktop's 'deutsch' folder."""
     try:
         service = build("gmail", "v1", credentials=establish_connection())
-        emails = get_emails_by_label(service, email_label="New Deutsch words", search_subject="How’d you say in German")
+        emails = get_emails_by_label(service, email_label="New Deutsch words", search_subject="How’d you say in German:")
         if emails:
             save_emails_to_html(emails)
     except HttpError as error:
